@@ -1,0 +1,211 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: #0d1117;
+  color: #c9d1d9;
+  line-height: 1.6;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: #0d1117;
+}
+
+/* 聊天頭部 - 角色信息 */
+.chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #30363d;
+  background-color: #161b22;
+  flex-shrink: 0;
+}
+
+.character-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.character-avatar {
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #6366f1 0%, #a78bfa 100%);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.character-details h2 {
+  color: #ffffff;
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+
+.character-details .status {
+  font-size: 12px;
+  color: #8b949e;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background-color: #21262d;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background-color 0.2s;
+}
+
+.icon-btn:hover {
+  background-color: #30363d;
+}
+
+/* 訊息列表區 */
+.messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.messages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.message {
+  display: flex;
+  gap: 8px;
+  animation: messageSlideIn 0.3s ease-out;
+}
+
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message.user {
+  justify-content: flex-end;
+}
+
+.message-avatar {
+  width: 32px;
+  height: 32px;
+  background-color: #30363d;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.message-content {
+  max-width: 60%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  word-wrap: break-word;
+}
+
+.message.bot .message-content {
+  background-color: #21262d;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+}
+
+.message.user .message-content {
+  background-color: #6366f1;
+  color: #ffffff;
+}
+
+/* 聊天輸入區 */
+.chat-input-area {
+  display: flex;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid #30363d;
+  background-color: #161b22;
+  flex-shrink: 0;
+}
+
+.message-input {
+  flex: 1;
+  background-color: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #c9d1d9;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  resize: none;
+  transition: border-color 0.2s;
+}
+
+.message-input:focus {
+  outline: none;
+  border-color: #58a6ff;
+}
+
+.message-input::placeholder {
+  color: #8b949e;
+}
+
+.send-btn {
+  padding: 8px 16px;
+  background-color: #6366f1;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background-color 0.2s;
+  flex-shrink: 0;
+}
+
+.send-btn:hover {
+  background-color: #7c3aed;
+}
+
+.send-btn:active {
+  opacity: 0.8;
+}
+
+/* 滾動條樣式 */
+.messages-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.messages-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.messages-container::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 4px;
+}
+
+.messages-container::-webkit-scrollbar-thumb:hover {
+  background: #484f58;
+}

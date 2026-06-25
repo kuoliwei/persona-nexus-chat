@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Persona Nexus - 聊天室</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div class="chat-container">
+      <!-- 角色信息區 -->
+      <div class="chat-header">
+        <div class="character-info">
+          <div class="character-avatar"></div>
+          <div class="character-details">
+            <h2 id="characterName">聊天對象</h2>
+            <p id="characterStatus" class="status">離線</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button id="homeBtn" class="icon-btn" title="返回首頁">⌂</button>
+        </div>
+      </div>
+
+      <!-- 聊天訊息區 -->
+      <div class="messages-container">
+        <div id="messagesList" class="messages-list">
+          <!-- 訊息動態插入 -->
+        </div>
+      </div>
+
+      <!-- 訊息輸入區 -->
+      <div class="chat-input-area">
+        <textarea
+          id="messageInput"
+          class="message-input"
+          placeholder="輸入訊息... (Shift+Enter 換行，Enter 發送)"
+          rows="3"
+        ></textarea>
+        <button id="sendBtn" class="send-btn">發送</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
