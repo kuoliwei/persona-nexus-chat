@@ -10,6 +10,7 @@ export async function initChat(characterId) {
   const messageInput = document.getElementById('messageInput');
   const sendBtn = document.getElementById('sendBtn');
   const messagesList = document.getElementById('messagesList');
+  const restartBtn = document.getElementById('restartBtn');
   const homeBtn = document.getElementById('homeBtn');
   const characterNameEl = document.getElementById('characterName');
   const characterStatusEl = document.getElementById('characterStatus');
@@ -75,8 +76,10 @@ export async function initChat(characterId) {
       }
 
       const conversation = await conversationRes.json();
+      // 🆕 保存聊天室 ID 到 sessionStorage（分頁隔離）
+      sessionStorage.setItem('conversationId', conversation.conversationId);
       messages = conversation.messages || [];
-      console.log('✅ [chat.js] 對話載入成功，訊息數:', messages.length);
+      console.log('✅ [chat.js] 對話載入成功，聊天室 ID:', conversation.conversationId, '訊息數:', messages.length);
 
       // 3. 更新 UI
       characterNameEl.textContent = characterName;
@@ -96,9 +99,28 @@ export async function initChat(characterId) {
     if (!text) return;
 
     try {
-      console.log('📤 [chat.js] 發送訊息...');
+      // 🆕 從 sessionStorage 讀取聊天室 ID（分頁隔離）
+      const conversationId = sessionStorage.getItem('conversationId');
+      if (!conversationId) {
+        throw new Error('聊天室 ID 不存在，請重新載入頁面');
+      }
 
-      // 1. 發送訊息到後端
+      console.log('📤 [chat.js] 發送訊息，聊天室 ID:', conversationId);
+
+      // 🆕 使用新 API：直接用聊天室 ID 發送訊息
+      const sendRes = await fetch(
+        `${GATEWAY_URL}/conversations/${conversationId}/messages`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ role: 'user', text }),
+        }
+      );
+
+      /* 舊方法（已廢棄）
       const sendRes = await fetch(
         `${GATEWAY_URL}/conversations/character/${characterId}/messages`,
         {
@@ -110,6 +132,7 @@ export async function initChat(characterId) {
           body: JSON.stringify({ role: 'user', text }),
         }
       );
+      */
 
       if (!sendRes.ok) {
         throw new Error(`Failed to send message: ${sendRes.status}`);
@@ -133,6 +156,51 @@ export async function initChat(characterId) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
+    }
+  });
+
+  // 重啟聊天室
+  restartBtn.addEventListener('click', async () => {
+    if (confirm('確定要重啟聊天室嗎？這將刪除所有現有聊天記錄。')) {
+      try {
+        // 🆕 直接用 conversationId 呼叫重啟 API
+        const conversationId = sessionStorage.getItem('conversationId');
+        if (!conversationId) {
+          throw new Error('聊天室 ID 不存在，請重新載入頁面');
+        }
+
+        console.log('🔄 [chat.js] 重啟聊天室，ID:', conversationId);
+
+        const restartRes = await fetch(
+          `${GATEWAY_URL}/conversations/${conversationId}/restart`,
+          {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+          }
+        );
+
+        if (!restartRes.ok) {
+          throw new Error(`重啟失敗: ${restartRes.status}`);
+        }
+
+        const result = await restartRes.json();
+        const newConversationId = result.data.conversationId;
+
+        console.log('✅ [chat.js] 聊天室已重啟，新對話 ID:', newConversationId);
+
+        // 1. 更新 sessionStorage 中的 conversationId
+        sessionStorage.setItem('conversationId', newConversationId);
+
+        // 2. 清空聊天界面
+        messages = [];
+        messageInput.value = '';
+        renderMessages();
+
+        console.log('✅ [chat.js] 重啟完成');
+      } catch (error) {
+        console.error('❌ [chat.js] 重啟失敗:', error);
+        alert(`重啟失敗: ${error.message}`);
+      }
     }
   });
 
