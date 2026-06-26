@@ -116,34 +116,31 @@ export async function initChat(characterId) {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ role: 'user', text }),
+          body: JSON.stringify({ text }),
         }
       );
-
-      /* 舊方法（已廢棄）
-      const sendRes = await fetch(
-        `${GATEWAY_URL}/conversations/character/${characterId}/messages`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ role: 'user', text }),
-        }
-      );
-      */
 
       if (!sendRes.ok) {
         throw new Error(`Failed to send message: ${sendRes.status}`);
       }
 
-      const newMessage = await sendRes.json();
-      messages.push(newMessage);
+      // 🆕 後端現在回傳 { userMessage, assistantMessage }
+      const response = await sendRes.json();
+
+      // 添加用戶訊息
+      if (response.userMessage) {
+        messages.push(response.userMessage);
+      }
+
+      // 添加 AI 回應
+      if (response.assistantMessage) {
+        messages.push(response.assistantMessage);
+      }
+
       messageInput.value = '';
       renderMessages();
 
-      console.log('✅ [chat.js] 訊息已發送');
+      console.log('✅ [chat.js] 訊息已發送及回應已接收');
     } catch (error) {
       console.error('❌ [chat.js] 發送訊息失敗:', error);
     }
