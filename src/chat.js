@@ -14,9 +14,29 @@ export async function initChat(characterId) {
   const homeBtn = document.getElementById('homeBtn');
   const characterNameEl = document.getElementById('characterName');
   const characterStatusEl = document.getElementById('characterStatus');
+  const initializingOverlay = document.getElementById('initializingOverlay');
+  const initializingMessage = document.getElementById('initializingMessage');
 
   let messages = [];
   let token = localStorage.getItem('token');
+
+  // 🆕 顯示初始化懸浮層，禁用輸入
+  function showInitializing(message = '聊天室準備中...') {
+    initializingOverlay.classList.remove('hidden');
+    initializingMessage.textContent = message;
+    messageInput.disabled = true;
+    sendBtn.disabled = true;
+  }
+
+  // 🆕 隱藏初始化懸浮層，啟用輸入
+  function hideInitializing() {
+    initializingOverlay.classList.add('hidden');
+    messageInput.disabled = false;
+    sendBtn.disabled = false;
+  }
+
+  // 顯示初始化狀態
+  showInitializing();
 
   // 1. 初始化聊天室：載入角色信息 + 對話內容
   if (characterId) {
@@ -24,6 +44,9 @@ export async function initChat(characterId) {
   } else {
     console.warn('⚠️ [chat.js] 缺少 characterId 參數');
   }
+
+  // 隱藏初始化層
+  hideInitializing();
 
   // 渲染訊息
   function renderMessages() {
@@ -98,8 +121,12 @@ export async function initChat(characterId) {
     const text = messageInput.value.trim();
     if (!text) return;
 
+    // 禁用輸入區
+    messageInput.disabled = true;
+    sendBtn.disabled = true;
+
     try {
-      // 🆕 從 sessionStorage 讀取聊天室 ID（分頁隔離）
+      // 從 sessionStorage 讀取聊天室 ID
       const conversationId = sessionStorage.getItem('conversationId');
       if (!conversationId) {
         throw new Error('聊天室 ID 不存在，請重新載入頁面');
@@ -107,7 +134,7 @@ export async function initChat(characterId) {
 
       console.log('📤 [chat.js] 發送訊息，聊天室 ID:', conversationId);
 
-      // 🆕 使用新 API：直接用聊天室 ID 發送訊息
+      // 發送訊息到後端
       const sendRes = await fetch(
         `${GATEWAY_URL}/conversations/${conversationId}/messages`,
         {
@@ -124,7 +151,6 @@ export async function initChat(characterId) {
         throw new Error(`Failed to send message: ${sendRes.status}`);
       }
 
-      // 🆕 後端現在回傳 { userMessage, assistantMessage }
       const response = await sendRes.json();
 
       // 添加用戶訊息
@@ -132,18 +158,101 @@ export async function initChat(characterId) {
         messages.push(response.userMessage);
       }
 
-      // 添加 AI 回應
+      // 添加 AI 佔位訊息（正在思考中...）
+      let assistantMessage = null;
       if (response.assistantMessage) {
-        messages.push(response.assistantMessage);
+        assistantMessage = response.assistantMessage;
+        messages.push(assistantMessage);
       }
 
       messageInput.value = '';
       renderMessages();
 
-      console.log('✅ [chat.js] 訊息已發送及回應已接收');
+      console.log('✅ [chat.js] 訊息已發送，開始輪詢 AI 回覆...');
+
+      // 🆕 開始輪詢 AI 回覆（如果是 AI 訊息）
+      if (assistantMessage) {
+        pollForAIResponse(conversationId, assistantMessage.id);
+      }
     } catch (error) {
       console.error('❌ [chat.js] 發送訊息失敗:', error);
+      messageInput.disabled = false;
+      sendBtn.disabled = false;
     }
+  }
+
+  // 🆕 只更新單一訊息的 DOM（不重新渲染整個列表）
+  function updateMessageDOM(messageId, newText) {
+    const messageElements = document.querySelectorAll('.message');
+    for (let el of messageElements) {
+      const contentEl = el.querySelector('.message-content');
+      // 簡單的方式：檢查該訊息在 messages 陣列中是否存在
+      const msgIndex = messages.findIndex(m => m.id === messageId);
+      if (msgIndex !== -1 && el === messagesList.children[msgIndex]) {
+        contentEl.textContent = newText;
+        break;
+      }
+    }
+  }
+
+  // 🆕 輪詢 AI 回覆進度
+  async function pollForAIResponse(conversationId, messageId) {
+    const maxAttempts = 120; // 最多輪詢 120 次 (60 秒)
+    let attempts = 0;
+
+    const pollInterval = setInterval(async () => {
+      attempts++;
+
+      try {
+        const res = await fetch(
+          `${GATEWAY_URL}/conversations/${conversationId}/messages/${messageId}`,
+          {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!res.ok) {
+          throw new Error(`Failed to fetch message: ${res.status}`);
+        }
+
+        const message = await res.json();
+
+        console.log(`⏳ [chat.js] 查詢 AI 回覆狀態 (${attempts}): ${message.status}`);
+
+        // 更新訊息列表中的訊息
+        const msgIndex = messages.findIndex(m => m.id === messageId);
+        if (msgIndex !== -1) {
+          messages[msgIndex] = message;
+
+          // 🆕 只更新這一條訊息的 DOM，不重新渲染整個列表
+          updateMessageDOM(messageId, message.text);
+        }
+
+        // 如果 AI 完成，停止輪詢
+        if (message.status === 'completed') {
+          console.log('✅ [chat.js] AI 回覆已完成');
+          clearInterval(pollInterval);
+          messageInput.disabled = false;
+          sendBtn.disabled = false;
+        }
+
+        // 超時
+        if (attempts >= maxAttempts) {
+          console.warn('⚠️ [chat.js] 輪詢超時');
+          clearInterval(pollInterval);
+          messageInput.disabled = false;
+          sendBtn.disabled = false;
+        }
+      } catch (error) {
+        console.error('❌ [chat.js] 輪詢失敗:', error);
+        clearInterval(pollInterval);
+        messageInput.disabled = false;
+        sendBtn.disabled = false;
+      }
+    }, 500); // 每 500ms 查詢一次
   }
 
   // 事件綁定
@@ -160,7 +269,10 @@ export async function initChat(characterId) {
   restartBtn.addEventListener('click', async () => {
     if (confirm('確定要重啟聊天室嗎？這將刪除所有現有聊天記錄。')) {
       try {
-        // 🆕 直接用 conversationId 呼叫重啟 API
+        // 🆕 顯示重啟中的懸浮層
+        showInitializing('聊天室重啟中...');
+
+        // 直接用 conversationId 呼叫重啟 API
         const conversationId = sessionStorage.getItem('conversationId');
         if (!conversationId) {
           throw new Error('聊天室 ID 不存在，請重新載入頁面');
@@ -188,15 +300,32 @@ export async function initChat(characterId) {
         // 1. 更新 sessionStorage 中的 conversationId
         sessionStorage.setItem('conversationId', newConversationId);
 
-        // 2. 清空聊天界面
-        messages = [];
+        // 2. 重新載入新對話的信息（包括開場白）
+        const newConversationRes = await fetch(
+          `${GATEWAY_URL}/conversations/${newConversationId}`,
+          {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` },
+          }
+        );
+
+        if (newConversationRes.ok) {
+          const newConversation = await newConversationRes.json();
+          messages = newConversation.messages || [];
+          console.log('✅ [chat.js] 新對話訊息已載入');
+        }
+
         messageInput.value = '';
         renderMessages();
 
         console.log('✅ [chat.js] 重啟完成');
+
+        // 隱藏懸浮層
+        hideInitializing();
       } catch (error) {
         console.error('❌ [chat.js] 重啟失敗:', error);
         alert(`重啟失敗: ${error.message}`);
+        hideInitializing();
       }
     }
   });
