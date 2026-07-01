@@ -39,14 +39,13 @@ export async function initChat(characterId) {
   showInitializing();
 
   // 1. 初始化聊天室：載入角色信息 + 對話內容
+  //    懸浮層由 initializeChat 內部控制：就緒才撤、失敗則維持並顯示錯誤
   if (characterId) {
     await initializeChat(characterId);
   } else {
     console.warn('⚠️ [chat.js] 缺少 characterId 參數');
+    showInitializing('缺少角色參數，無法開啟聊天室');
   }
-
-  // 隱藏初始化層
-  hideInitializing();
 
   // 渲染訊息
   function renderMessages() {
@@ -88,32 +87,96 @@ export async function initChat(characterId) {
         console.warn('⚠️ [chat.js] 無法載入角色信息，使用預設名稱');
       }
 
-      // 2. 載入或建立對話
-      console.log('📡 [chat.js] 載入或建立對話...');
-      const conversationRes = await fetch(`${GATEWAY_URL}/conversations/character/${charId}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
+      // 角色名稱先更新（輪詢期間就能看到角色名）
+      characterNameEl.textContent = characterName;
 
-      if (!conversationRes.ok) {
-        throw new Error(`Failed to fetch conversation: ${conversationRes.status}`);
+      // 2. 載入或建立對話（輪詢直到就緒 / 失敗）
+      console.log('📡 [chat.js] 載入或建立對話（輪詢）...');
+      const conversation = await pollForConversation(charId);
+
+      if (!conversation) {
+        // 建立失敗或超時：維持懸浮層並顯示錯誤
+        characterStatusEl.textContent = '離線';
+        showInitializing('聊天室建立失敗，請重新整理頁面再試');
+        return;
       }
 
-      const conversation = await conversationRes.json();
-      // 🆕 保存聊天室 ID 到 sessionStorage（分頁隔離）
+      // 3. 就緒：保存 ID、載入訊息、更新 UI、撤掉懸浮層
       sessionStorage.setItem('conversationId', conversation.conversationId);
       messages = conversation.messages || [];
       console.log('✅ [chat.js] 對話載入成功，聊天室 ID:', conversation.conversationId, '訊息數:', messages.length);
 
-      // 3. 更新 UI
-      characterNameEl.textContent = characterName;
       characterStatusEl.textContent = '線上';
       renderMessages();
+      hideInitializing();
 
     } catch (error) {
       console.error('❌ [chat.js] 初始化失敗:', error);
       characterNameEl.textContent = '載入失敗';
       characterStatusEl.textContent = '離線';
+      showInitializing('聊天室載入失敗，請重新整理頁面再試');
     }
+  }
+
+  // 🆕 輪詢聊天室建立狀態，直到就緒（200）或失敗（503 / 超時）
+  async function pollForConversation(charId) {
+    const maxAttempts = 120;   // 最多輪詢 120 次
+    const intervalMs = 1000;   // 每次間隔 1 秒（最多等 120 秒）
+
+    console.log(`\n🔄 [chat.js] 開始輪詢聊天室狀態: charId=${charId}, 最多${maxAttempts}次`);
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      console.log(`  ┌─ 【輪詢 ${attempt}/${maxAttempts}】 GET /conversations/character/${charId}`);
+
+      try {
+        const res = await fetch(`${GATEWAY_URL}/conversations/character/${charId}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+
+        console.log(`  ├─ HTTP ${res.status}`);
+
+        // 200：聊天室已就緒
+        if (res.status === 200) {
+          const data = await res.json();
+          console.log(`  ✅ 聊天室就緒（輪詢 ${attempt} 次）`);
+          console.log(`  └─ conversationId: ${data.conversationId}, 訊息數: ${data.messages?.length || 0}\n`);
+          return data;
+        }
+
+        // 202：建立中，繼續輪詢
+        if (res.status === 202) {
+          console.log(`  ├─ 狀態: preparing（聊天室準備中）`);
+          console.log(`  └─ 等待 ${intervalMs}ms 後重試...\n`);
+          showInitializing('聊天室準備中...');
+          await sleep(intervalMs);
+          continue;
+        }
+
+        // 503：建立失敗
+        if (res.status === 503) {
+          const data = await res.json();
+          console.error(`  ❌ 聊天室建立失敗`);
+          console.error(`  └─ message: ${data.message}\n`);
+          return null;
+        }
+
+        // 其他狀態碼
+        console.error(`  ❌ 未預期的 HTTP 狀態: ${res.status}\n`);
+        return null;
+
+      } catch (error) {
+        console.error(`  ❌ 輪詢請求失敗: ${error.message}\n`);
+        return null;
+      }
+    }
+
+    console.warn(`\n⏱️  [chat.js] 聊天室準備超時（超過 ${maxAttempts} 次輪詢）\n`);
+    return null;
+  }
+
+  // 🆕 sleep 工具
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // 發送訊息
@@ -294,26 +357,16 @@ export async function initChat(characterId) {
 
         const result = await restartRes.json();
         const newConversationId = result.data.conversationId;
+        const newMessages = result.data.messages || [];
 
-        console.log('✅ [chat.js] 聊天室已重啟，新對話 ID:', newConversationId);
+        console.log('✅ [chat.js] 聊天室已重啟，新對話 ID:', newConversationId, '訊息數:', newMessages.length);
 
         // 1. 更新 sessionStorage 中的 conversationId
         sessionStorage.setItem('conversationId', newConversationId);
 
-        // 2. 重新載入新對話的信息（包括開場白）
-        const newConversationRes = await fetch(
-          `${GATEWAY_URL}/conversations/${newConversationId}`,
-          {
-            method: 'GET',
-            headers: { 'Authorization': `Bearer ${token}` },
-          }
-        );
-
-        if (newConversationRes.ok) {
-          const newConversation = await newConversationRes.json();
-          messages = newConversation.messages || [];
-          console.log('✅ [chat.js] 新對話訊息已載入');
-        }
+        // 2. 直接使用後端返回的訊息（包括開場白）
+        messages = newMessages;
+        console.log('✅ [chat.js] 新對話訊息已更新');
 
         messageInput.value = '';
         renderMessages();
