@@ -377,7 +377,7 @@ export async function initChat(characterId) {
         hideInitializing();
       } catch (error) {
         console.error('❌ [chat.js] 重啟失敗:', error);
-        alert(`重啟失敗: ${error.message}`);
+        alert('重啟失敗，請稍後重試。');
         hideInitializing();
       }
     }
