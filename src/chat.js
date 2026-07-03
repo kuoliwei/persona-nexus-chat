@@ -197,7 +197,57 @@ export async function initChat(characterId) {
 
       console.log('📤 [chat.js] 發送訊息，聊天室 ID:', conversationId);
 
-      // 發送訊息到後端
+      messageInput.value = '';
+
+      // 🆕 【乐观更新】立即创建用户消息（使用临时 ID）
+      const tempUserId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const tempUserMessage = {
+        id: tempUserId,
+        role: 'user',
+        text: text,
+        createdAt: new Date().toISOString(),
+        isTemporary: true, // 标记为临时消息
+      };
+
+      messages.push(tempUserMessage);
+      console.log(`📝 [chat.js] 用戶訊息已立即顯示（臨時ID: ${tempUserId}）`);
+      renderMessages();
+
+      // 【现在创建占位符氣泡】
+      const placeholderId = `placeholder_${Date.now()}`;
+      const placeholderMessage = {
+        id: placeholderId,
+        role: 'assistant',
+        text: `（${document.getElementById('characterName').textContent} 正在思考中...）`,
+        status: 'pending',
+        isPlaceholder: true,
+      };
+
+      messages.push(placeholderMessage);
+      console.log('💬 [chat.js] 占位符已顯示');
+      renderMessages();
+
+      console.log('✅ [chat.js] 訊息已顯示，開始輪詢...');
+
+      // 开始轮询 AI 回复，获得停止函数
+      const userMessageCreatedAt = tempUserMessage.createdAt;
+      console.log(`⏰ [chat.js] 用戶訊息時間: ${userMessageCreatedAt}`);
+
+      const stopPoll = pollForAIResponse(conversationId, placeholderId, userMessageCreatedAt, tempUserId);
+
+      // 🆕 【非同步發送】不 await，但傳遞 placeholderId 和 stopPoll
+      // 後端失敗時會停止輪詢並顯示錯誤消息
+      sendMessageToBackend(conversationId, tempUserId, text, placeholderId, stopPoll);
+    } catch (error) {
+      console.error('❌ [chat.js] 發送訊息失敗:', error);
+      messageInput.disabled = false;
+      sendBtn.disabled = false;
+    }
+  }
+
+  // 🆕 異步發送消息到後端（非同步，失敗時停止輪詢並顯示錯誤消息）
+  async function sendMessageToBackend(conversationId, tempUserId, text, placeholderId, stopPoll) {
+    try {
       const sendRes = await fetch(
         `${GATEWAY_URL}/conversations/${conversationId}/messages`,
         {
@@ -211,36 +261,77 @@ export async function initChat(characterId) {
       );
 
       if (!sendRes.ok) {
-        throw new Error(`Failed to send message: ${sendRes.status}`);
+        // 🆕 【參考 pollForAIResponse 的失敗處理】後端拒絕，直接在前端顯示失敗消息
+        console.error(`❌ [chat.js] 發送到後端失敗: ${sendRes.status}`);
+
+        const errorText = await sendRes.text();
+        let errorMessage = `HTTP ${sendRes.status}`;
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.message || errorMessage;
+        } catch (e) {
+          // 無法解析 JSON，使用預設錯誤信息
+        }
+
+        // 🆕 【停止輪詢】不再繼續輪詢（發送已失敗）
+        if (stopPoll) {
+          console.log('⏹️  [chat.js] 停止輪詢，後端已拒絕');
+          stopPoll();
+        }
+
+        // 刪除占位符，顯示失敗消息（同 pollForAIResponse 的邏輯）
+        const placeholderIndex = messages.findIndex(m => m.id === placeholderId);
+        const failureMessage = {
+          id: `failure_${Date.now()}`,
+          role: 'assistant',
+          text: `（${document.getElementById('characterName').textContent} 回應失敗: ${errorMessage}，請重試）`,
+          status: 'failed',
+          isPlaceholder: true,
+        };
+
+        if (placeholderIndex !== -1) {
+          messages[placeholderIndex] = failureMessage;
+        } else {
+          messages.push(failureMessage);
+        }
+
+        console.log('❌ [chat.js] 已在本地創建失敗消息');
+        renderMessages();
+        return;
       }
 
       const response = await sendRes.json();
 
-      // 添加用戶訊息
-      if (response.userMessage) {
-        messages.push(response.userMessage);
-      }
-
-      // 添加 AI 佔位訊息（正在思考中...）
-      let assistantMessage = null;
-      if (response.assistantMessage) {
-        assistantMessage = response.assistantMessage;
-        messages.push(assistantMessage);
-      }
-
-      messageInput.value = '';
-      renderMessages();
-
-      console.log('✅ [chat.js] 訊息已發送，開始輪詢 AI 回覆...');
-
-      // 🆕 開始輪詢 AI 回覆（如果是 AI 訊息）
-      if (assistantMessage) {
-        pollForAIResponse(conversationId, assistantMessage.id);
-      }
+      // ✅ 後端已接收請求，前端的臨時消息已經顯示
+      // 不需要替換，直接保留原始的 tempUserId
+      // 成功時會從 /messages 獲取真實數據，失敗時會刪除這個臨時消息
+      console.log(`✅ [chat.js] 後端已接收請求，臨時訊息保留為: ${tempUserId}`);
     } catch (error) {
-      console.error('❌ [chat.js] 發送訊息失敗:', error);
-      messageInput.disabled = false;
-      sendBtn.disabled = false;
+      console.error('❌ [chat.js] 發送到後端異常:', error);
+
+      // 🆕 【停止輪詢】異常時也停止輪詢
+      if (stopPoll) {
+        console.log('⏹️  [chat.js] 停止輪詢，發送異常');
+        stopPoll();
+      }
+
+      // 異常時也顯示失敗消息
+      const placeholderIndex = messages.findIndex(m => m.id === placeholderId);
+      const failureMessage = {
+        id: `failure_${Date.now()}`,
+        role: 'assistant',
+        text: `（${document.getElementById('characterName').textContent} 回應失敗: ${error.message || '未知錯誤'}，請重試）`,
+        status: 'failed',
+        isPlaceholder: true,
+      };
+
+      if (placeholderIndex !== -1) {
+        messages[placeholderIndex] = failureMessage;
+      } else {
+        messages.push(failureMessage);
+      }
+
+      renderMessages();
     }
   }
 
@@ -258,8 +349,9 @@ export async function initChat(characterId) {
     }
   }
 
-  // 🆕 輪詢 AI 回覆進度
-  async function pollForAIResponse(conversationId, messageId) {
+  // 輪詢 AI 回覆（輪詢所有訊息以查找新的 AI 回應）
+  // 🆕 注意：不能是 async，否則回傳的是 Promise 而不是停止函數
+  function pollForAIResponse(conversationId, placeholderId, userMessageCreatedAt, tempUserId) {
     const maxAttempts = 120; // 最多輪詢 120 次 (60 秒)
     let attempts = 0;
 
@@ -267,8 +359,9 @@ export async function initChat(characterId) {
       attempts++;
 
       try {
-        const res = await fetch(
-          `${GATEWAY_URL}/conversations/${conversationId}/messages/${messageId}`,
+        // 🔑 只輪詢 AI 生成狀態
+        const statusRes = await fetch(
+          `${GATEWAY_URL}/conversations/${conversationId}/ai-generation-status`,
           {
             method: 'GET',
             headers: {
@@ -277,34 +370,122 @@ export async function initChat(characterId) {
           }
         );
 
-        if (!res.ok) {
-          throw new Error(`Failed to fetch message: ${res.status}`);
+        if (!statusRes.ok) {
+          throw new Error(`Failed to fetch generation status: ${statusRes.status}`);
         }
 
-        const message = await res.json();
+        const generationStatus = await statusRes.json();
+        console.log(`⏳ [chat.js] 查詢 AI 狀態 (${attempts}): ${JSON.stringify(generationStatus)}`);
 
-        console.log(`⏳ [chat.js] 查詢 AI 回覆狀態 (${attempts}): ${message.status}`);
+        // ❌ 如果生成失敗
+        if (generationStatus && generationStatus.status === 'failed') {
+          console.error(`❌ [chat.js] AI 生成失敗: ${generationStatus.error}`);
 
-        // 更新訊息列表中的訊息
-        const msgIndex = messages.findIndex(m => m.id === messageId);
-        if (msgIndex !== -1) {
-          messages[msgIndex] = message;
+          // ✅ 保留用户消息，即使 AI 失败
+          // 用户已经看到自己的消息，删除它会造成困惑
+          console.log(`📝 [chat.js] 用戶訊息保留，ID: ${tempUserId}`);
 
-          // 🆕 只更新這一條訊息的 DOM，不重新渲染整個列表
-          updateMessageDOM(messageId, message.text);
-        }
+          const placeholderIndex = messages.findIndex(m => m.id === placeholderId);
 
-        // 如果 AI 完成，停止輪詢
-        if (message.status === 'completed') {
-          console.log('✅ [chat.js] AI 回覆已完成');
+          // 用失敗消息替換占位符
+          const failureMessage = {
+            id: `failure_${Date.now()}`,
+            role: 'assistant',
+            text: `（${document.getElementById('characterName').textContent} 回應失敗: ${generationStatus.error || '未知錯誤'}，請重試）`,
+            status: 'failed',
+            isPlaceholder: true, // 標記為前端臨時消息，不會被保存
+          };
+
+          if (placeholderIndex !== -1) {
+            messages[placeholderIndex] = failureMessage;
+          } else {
+            messages.push(failureMessage);
+          }
+
+          console.log('❌ [chat.js] 已在本地創建失敗消息');
+          renderMessages();
           clearInterval(pollInterval);
           messageInput.disabled = false;
           sendBtn.disabled = false;
+          return; // 停止輪詢
+        }
+
+        // ✅ 如果生成完成，才調用消息 API
+        if (generationStatus && generationStatus.status === 'completed') {
+          console.log(`✅ [chat.js] AI 生成完成，開始取得消息...`);
+
+          const messagesRes = await fetch(
+            `${GATEWAY_URL}/conversations/${conversationId}/messages`,
+            {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+              },
+            }
+          );
+
+          if (!messagesRes.ok) {
+            throw new Error(`Failed to fetch messages: ${messagesRes.status}`);
+          }
+
+          const latestMessages = await messagesRes.json();
+          console.log(`📋 [chat.js] 取得訊息數=${latestMessages.length}`);
+
+          // 查找新的 AI 回應：status='completed' 且 createdAt > userMessageCreatedAt
+          const newAIMessages = latestMessages
+            .filter(m =>
+              m.role === 'assistant' &&
+              m.status === 'completed' &&
+              new Date(m.createdAt) > new Date(userMessageCreatedAt)
+            );
+
+          const latestAIMessage = newAIMessages.pop(); // 取最新的一個
+          if (latestAIMessage) {
+            console.log(`✅ [chat.js] 找到 AI 回覆: ${latestAIMessage.id}`);
+
+            // 找到占位符並替換
+            const placeholderIndex = messages.findIndex(m => m.id === placeholderId);
+
+            if (placeholderIndex !== -1) {
+              messages[placeholderIndex] = latestAIMessage;
+              console.log(`✅ [chat.js] 占位符已替換`);
+            } else {
+              messages.push(latestAIMessage);
+              console.log(`⚠️ [chat.js] 占位符已添加`);
+            }
+
+            renderMessages();
+            clearInterval(pollInterval);
+            messageInput.disabled = false;
+            sendBtn.disabled = false;
+            return;
+          }
         }
 
         // 超時
         if (attempts >= maxAttempts) {
           console.warn('⚠️ [chat.js] 輪詢超時');
+
+          // ✅ 保留用户消息，即使超时
+          console.log(`📝 [chat.js] 用戶訊息保留，ID: ${tempUserId}`);
+
+          const placeholderIndex = messages.findIndex(m => m.id === placeholderId);
+
+          const failureMessage = {
+            id: `failure_${Date.now()}`,
+            role: 'assistant',
+            text: `（${document.getElementById('characterName').textContent} 回應失敗，請重試）`,
+            status: 'failed',
+            isPlaceholder: true,
+          };
+
+          if (placeholderIndex !== -1) {
+            messages[placeholderIndex] = failureMessage;
+          } else {
+            messages.push(failureMessage);
+          }
+
+          renderMessages();
           clearInterval(pollInterval);
           messageInput.disabled = false;
           sendBtn.disabled = false;
@@ -316,6 +497,13 @@ export async function initChat(characterId) {
         sendBtn.disabled = false;
       }
     }, 500); // 每 500ms 查詢一次
+
+    // 🆕 返回停止輪詢的函數
+    return () => {
+      clearInterval(pollInterval);
+      messageInput.disabled = false;
+      sendBtn.disabled = false;
+    };
   }
 
   // 事件綁定
