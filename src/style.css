@@ -140,6 +140,211 @@ body {
   color: #ffffff;
 }
 
+/* 🆕 訊息三點選單按鈕 */
+.message-menu-btn {
+  flex-shrink: 0;
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #8b949e;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.2s ease, color 0.2s ease;
+}
+
+.message:hover .message-menu-btn {
+  opacity: 1;
+}
+
+.message-menu-btn:hover {
+  background-color: transparent;
+  color: #ffffff;
+}
+
+/* 🆕 訊息選單（沿用 lobby conversation-menu 的效果） */
+.message-menu {
+  position: fixed;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  min-width: 120px;
+}
+
+.message-menu-item {
+  padding: 10px 12px;
+  color: #c9d1d9;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.message-menu-item:hover {
+  background-color: #21262d;
+  color: #58a6ff;
+}
+
+.message-menu-item:first-child {
+  border-radius: 6px 6px 0 0;
+}
+
+.message-menu-item:last-child {
+  border-radius: 0 0 6px 6px;
+}
+
+/* 🆕 主人公人設彈窗 */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1500;
+}
+
+.modal-overlay.hidden {
+  display: none;
+}
+
+.modal-box {
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  width: 90%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid #30363d;
+}
+
+.modal-header h3 {
+  color: #c9d1d9;
+  font-size: 16px;
+  margin: 0;
+}
+
+.modal-close-btn {
+  border: none;
+  background: transparent;
+  color: #8b949e;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.modal-close-btn:hover {
+  background-color: transparent;
+  color: #ffffff;
+}
+
+.modal-body {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.modal-label {
+  color: #8b949e;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.modal-input,
+.modal-textarea {
+  background-color: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #c9d1d9;
+  font-size: 14px;
+  padding: 8px 10px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.modal-input:focus,
+.modal-textarea:focus {
+  outline: none;
+  border-color: #58a6ff;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 18px;
+  border-top: 1px solid #30363d;
+}
+
+.modal-save-btn {
+  background-color: #238636;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 20px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.modal-save-btn:hover {
+  background-color: #2ea043;
+}
+
+.modal-save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 🆕 懸浮通知（3 秒自動消失） */
+.toast-notification {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #161b22;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 2000;
+  animation: toastSlideIn 0.3s ease-out;
+  transition: opacity 0.3s ease;
+}
+
+.toast-notification.toast-fade-out {
+  opacity: 0;
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
 /* 聊天輸入區 */
 .chat-input-area {
   display: flex;

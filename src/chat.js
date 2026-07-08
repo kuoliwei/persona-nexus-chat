@@ -48,10 +48,14 @@ export async function initChat(characterId) {
   }
 
   // 渲染訊息
+  // 🆕 用戶訊息旁加三點選單按鈕（臨時訊息 temp_ 還沒存入 DB，不顯示選單）
   function renderMessages() {
     messagesList.innerHTML = messages.map((msg) => `
       <div class="message ${msg.role === 'user' ? 'user' : 'bot'}">
         ${msg.role !== 'user' ? '<div class="message-avatar"></div>' : ''}
+        ${msg.role === 'user' && !String(msg.id).startsWith('temp_')
+          ? `<button class="message-menu-btn" data-message-id="${msg.id}" title="更多選項">⋮</button>`
+          : ''}
         <div class="message-content">${escapeHtml(msg.text)}</div>
         ${msg.role === 'user' ? '<div class="message-avatar"></div>' : ''}
       </div>
@@ -59,6 +63,134 @@ export async function initChat(characterId) {
 
     // 自動滾動到底部
     messagesList.parentElement.scrollTop = messagesList.parentElement.scrollHeight;
+  }
+
+  // 🆕 三點按鈕事件（委派到列表上，重新渲染也不會失效）
+  messagesList.addEventListener('click', (e) => {
+    const btn = e.target.closest('.message-menu-btn');
+    if (btn) {
+      e.stopPropagation();
+      showMessageMenu(e, btn.dataset.messageId, btn);
+    }
+  });
+
+  // 🆕 顯示訊息選單（參考 lobby sidebar 的 conversation-menu 效果）
+  function showMessageMenu(event, messageId, anchorBtn) {
+    // 先關掉已存在的選單（避免疊加）
+    const existingMenu = document.querySelector('.message-menu');
+    if (existingMenu) existingMenu.remove();
+
+    // 建立菜單
+    const menu = document.createElement('div');
+    menu.className = 'message-menu';
+
+    // 編輯選項（功能未實作，先佔位）
+    const editOption = document.createElement('div');
+    editOption.className = 'message-menu-item';
+    editOption.textContent = '✏️ 編輯';
+    editOption.addEventListener('click', () => {
+      console.log(`✏️ [chat.js] 編輯訊息（尚未實作）: messageId=${messageId}`);
+      menu.remove();
+    });
+
+    // 刪除選項：刪除該訊息及其後所有訊息（回溯式刪除）
+    const deleteOption = document.createElement('div');
+    deleteOption.className = 'message-menu-item';
+    deleteOption.textContent = '🗑️ 刪除';
+    deleteOption.addEventListener('click', async () => {
+      menu.remove();
+      if (confirm('確定要刪除這條訊息嗎？\n該訊息之後的所有對話（包含 AI 回覆）也會一併刪除。')) {
+        await deleteMessage(messageId);
+      }
+    });
+
+    menu.appendChild(editOption);
+    menu.appendChild(deleteOption);
+
+    // 定位菜單到按鈕下方
+    const rect = anchorBtn.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = `${rect.bottom + 4}px`;
+    menu.style.left = `${rect.left - 80}px`;
+
+    document.body.appendChild(menu);
+
+    // 點擊外部關閉菜單
+    setTimeout(() => {
+      document.addEventListener('click', closeMenu);
+    }, 0);
+
+    function closeMenu(e) {
+      if (!menu.contains(e.target) && e.target !== anchorBtn) {
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+      }
+    }
+  }
+
+  // 🆕 懸浮通知（3 秒後自動消失）
+  function showToast(message) {
+    // 移除既有的 toast（避免疊加）
+    const existingToast = document.querySelector('.toast-notification');
+    if (existingToast) existingToast.remove();
+
+    const toast = document.createElement('div');
+    toast.className = 'toast-notification';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    // 3 秒後淡出並移除
+    setTimeout(() => {
+      toast.classList.add('toast-fade-out');
+      setTimeout(() => toast.remove(), 300); // 等淡出動畫跑完
+    }, 3000);
+  }
+
+  // 🆕 刪除訊息（回溯式：該訊息及其後所有訊息一併刪除）
+  async function deleteMessage(messageId) {
+    try {
+      const conversationId = sessionStorage.getItem('conversationId');
+      if (!conversationId) {
+        showToast('聊天室 ID 不存在，請重新載入頁面');
+        return;
+      }
+
+      console.log(`🗑️ [chat.js] 刪除訊息: conversationId=${conversationId}, messageId=${messageId}`);
+
+      const res = await fetch(
+        `${GATEWAY_URL}/conversations/${conversationId}/messages/${messageId}`,
+        {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` },
+        }
+      );
+
+      if (res.status === 409) {
+        // AI 生成中，拒絕刪除 → 懸浮通知
+        const data = await res.json();
+        console.log(`🚫 [chat.js] 刪除被拒（生成中）: ${data.message}`);
+        showToast(data.message || 'AI 正在回覆中，請稍後再試');
+        return;
+      }
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.error(`❌ [chat.js] 刪除失敗: ${res.status}`);
+        showToast(data.message || `刪除失敗（${res.status}）`);
+        return;
+      }
+
+      const result = await res.json();
+      console.log(`✅ [chat.js] 刪除成功: 共 ${result.deletedCount} 條`, result.deletedIds);
+
+      // 用後端回傳的 deletedIds 從本地陣列移除對應訊息
+      const deletedIdSet = new Set(result.deletedIds);
+      messages = messages.filter(m => !deletedIdSet.has(m.id));
+      renderMessages();
+    } catch (error) {
+      console.error('❌ [chat.js] 刪除訊息異常:', error);
+      showToast(`刪除失敗: ${error.message}`);
+    }
   }
 
   // HTML 逃逸（防止 XSS）
@@ -248,6 +380,7 @@ export async function initChat(characterId) {
   // 🆕 異步發送消息到後端（非同步，失敗時停止輪詢並顯示錯誤消息）
   async function sendMessageToBackend(conversationId, tempUserId, text, placeholderId, stopPoll) {
     try {
+      console.log(`🐛 [DEBUG] POST body 送出: { text: "${text.substring(0, 30)}...", tempUserId: "${tempUserId}" }`);
       const sendRes = await fetch(
         `${GATEWAY_URL}/conversations/${conversationId}/messages`,
         {
@@ -256,7 +389,8 @@ export async function initChat(characterId) {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ text }),
+          // 🆕 一併送出臨時 ID，後端生成成功後會在狀態中回傳「臨時 ID ↔ 真實 ID」配對
+          body: JSON.stringify({ text, tempUserId }),
         }
       );
 
@@ -280,6 +414,7 @@ export async function initChat(characterId) {
         }
 
         // 刪除占位符，顯示失敗消息（同 pollForAIResponse 的邏輯）
+        // 409 也走此通用路徑：保留用戶訊息、佔位符換成失敗氣泡（含後端回傳的具體訊息）
         const placeholderIndex = messages.findIndex(m => m.id === placeholderId);
         const failureMessage = {
           id: `failure_${Date.now()}`,
@@ -431,17 +566,39 @@ export async function initChat(characterId) {
           const latestMessages = await messagesRes.json();
           console.log(`📋 [chat.js] 取得訊息數=${latestMessages.length}`);
 
-          // 查找新的 AI 回應：status='completed' 且 createdAt > userMessageCreatedAt
-          const newAIMessages = latestMessages
-            .filter(m =>
-              m.role === 'assistant' &&
-              m.status === 'completed' &&
-              new Date(m.createdAt) > new Date(userMessageCreatedAt)
-            );
+          // 🆕 【ID 精準配對】優先用後端回傳的「臨時 ID ↔ 真實 ID」配對資訊替換
+          // generationStatus: { userMessageId, assistantMessageId, tempUserId }
+          let latestAIMessage = null;
+          if (generationStatus.assistantMessageId) {
+            latestAIMessage = latestMessages.find(m => m.id === generationStatus.assistantMessageId);
+            console.log(`🔗 [chat.js] 使用配對資訊: AI 訊息 ID=${generationStatus.assistantMessageId}`);
+            console.log(`🐛 [DEBUG] 走【ID 配對】路徑, 配對資訊: tempUserId=${generationStatus.tempUserId}, userMessageId=${generationStatus.userMessageId}, assistantMessageId=${generationStatus.assistantMessageId}`);
+          }
 
-          const latestAIMessage = newAIMessages.pop(); // 取最新的一個
+          // 後備：配對資訊缺失時，退回時間篩選（相容舊後端）
+          if (!latestAIMessage) {
+            console.log(`🐛 [DEBUG] 走【時間篩選】後備路徑（配對資訊缺失或找不到對應訊息）`);
+            const newAIMessages = latestMessages
+              .filter(m =>
+                m.role === 'assistant' &&
+                m.status === 'completed' &&
+                new Date(m.createdAt) > new Date(userMessageCreatedAt)
+              );
+            latestAIMessage = newAIMessages.pop(); // 取最新的一個
+          }
+
           if (latestAIMessage) {
             console.log(`✅ [chat.js] 找到 AI 回覆: ${latestAIMessage.id}`);
+
+            // 🆕 【替換臨時用戶訊息】用配對資訊把 temp_xxx 換成 DB 真實記錄
+            if (generationStatus.userMessageId) {
+              const realUserMessage = latestMessages.find(m => m.id === generationStatus.userMessageId);
+              const tempUserIndex = messages.findIndex(m => m.id === tempUserId);
+              if (realUserMessage && tempUserIndex !== -1) {
+                messages[tempUserIndex] = realUserMessage;
+                console.log(`✅ [chat.js] 臨時用戶訊息已替換: ${tempUserId} → ${realUserMessage.id}`);
+              }
+            }
 
             // 找到占位符並替換
             const placeholderIndex = messages.findIndex(m => m.id === placeholderId);
@@ -453,6 +610,14 @@ export async function initChat(characterId) {
               messages.push(latestAIMessage);
               console.log(`⚠️ [chat.js] 占位符已添加`);
             }
+
+            // 🐛 【DEBUG】替換後驗證：陣列中不應再有本輪的臨時 ID
+            const remainingTemp = messages.filter(m =>
+              String(m.id).startsWith('temp_') || String(m.id).startsWith('placeholder_')
+            );
+            console.log(`🐛 [DEBUG] ===== 替換後驗證 =====`);
+            console.log(`🐛 [DEBUG]   陣列末兩條: [${messages.slice(-2).map(m => `${m.id}(${m.role})`).join(', ')}]`);
+            console.log(`🐛 [DEBUG]   殘留臨時訊息: ${remainingTemp.length === 0 ? '無 ✅' : remainingTemp.map(m => m.id).join(', ') + ' ❌'}`);
 
             renderMessages();
             clearInterval(pollInterval);
@@ -571,9 +736,104 @@ export async function initChat(characterId) {
     }
   });
 
+  // 🆕 主人公人設彈窗
+  const protagonistBtn = document.getElementById('protagonistBtn');
+  const protagonistModal = document.getElementById('protagonistModal');
+  const protagonistCloseBtn = document.getElementById('protagonistCloseBtn');
+  const protagonistSaveBtn = document.getElementById('protagonistSaveBtn');
+  const protagonistNameInput = document.getElementById('protagonistNameInput');
+  const protagonistBackgroundInput = document.getElementById('protagonistBackgroundInput');
+
+  // 開啟彈窗：載入現有的主角人設
+  protagonistBtn.addEventListener('click', async () => {
+    const conversationId = sessionStorage.getItem('conversationId');
+    if (!conversationId) {
+      showToast('聊天室尚未就緒');
+      return;
+    }
+
+    protagonistModal.classList.remove('hidden');
+
+    try {
+      console.log(`👤 [chat.js] 載入主人公人設: conversationId=${conversationId}`);
+      const res = await fetch(`${GATEWAY_URL}/conversations/${conversationId}/protagonist`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        protagonistNameInput.value = data.protagonistName || '';
+        protagonistBackgroundInput.value = data.protagonistBackground || '';
+        console.log(`✅ [chat.js] 主人公人設已載入: 名稱=${data.protagonistName || '(空)'}, 背景=${(data.protagonistBackground || '').length} 字`);
+      } else {
+        console.error(`❌ [chat.js] 載入主人公人設失敗: ${res.status}`);
+        showToast('載入主人公人設失敗');
+      }
+    } catch (error) {
+      console.error('❌ [chat.js] 載入主人公人設異常:', error);
+      showToast('載入主人公人設失敗');
+    }
+  });
+
+  // 關閉彈窗（✕ 按鈕或點擊遮罩）
+  protagonistCloseBtn.addEventListener('click', () => {
+    protagonistModal.classList.add('hidden');
+  });
+  protagonistModal.addEventListener('click', (e) => {
+    if (e.target === protagonistModal) {
+      protagonistModal.classList.add('hidden');
+    }
+  });
+
+  // 儲存：PUT 到後端（後端先更新 RAG 切片，成功才寫 DB）
+  protagonistSaveBtn.addEventListener('click', async () => {
+    const conversationId = sessionStorage.getItem('conversationId');
+    if (!conversationId) {
+      showToast('聊天室尚未就緒');
+      return;
+    }
+
+    const protagonistName = protagonistNameInput.value.trim();
+    const protagonistBackground = protagonistBackgroundInput.value.trim();
+
+    protagonistSaveBtn.disabled = true;
+    protagonistSaveBtn.textContent = '儲存中...';
+
+    try {
+      console.log(`👤 [chat.js] 儲存主人公人設: 名稱=${protagonistName || '(空)'}, 背景=${protagonistBackground.length} 字`);
+      const res = await fetch(`${GATEWAY_URL}/conversations/${conversationId}/protagonist`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ protagonistName, protagonistBackground }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.error(`❌ [chat.js] 儲存主人公人設失敗: ${res.status}`);
+        showToast(data.message || `儲存失敗（${res.status}）`);
+        return;
+      }
+
+      console.log('✅ [chat.js] 主人公人設已儲存');
+      protagonistModal.classList.add('hidden');
+      showToast('主人公人設已儲存');
+    } catch (error) {
+      console.error('❌ [chat.js] 儲存主人公人設異常:', error);
+      showToast(`儲存失敗: ${error.message}`);
+    } finally {
+      protagonistSaveBtn.disabled = false;
+      protagonistSaveBtn.textContent = '儲存';
+    }
+  });
+
   homeBtn.addEventListener('click', () => {
-    // 在 iframe 中使用 window.parent 改變主頁位置
-    window.parent.location.href = '/';
+    // 在 iframe 中使用 window.parent 改變主頁位置（避免 lobby 首頁被載進右側面板造成雙側邊欄）
+    // 🆕 必須用絕對網址：跨域 iframe 下相對路徑 '/' 會以聊天室自己的網域（5176）解析，
+    //    導致父窗口跳到裸的 5176/，再被守門踢去登入頁
+    window.parent.location.href = config.frontends.lobby;
   });
 
   // 初始化渲染

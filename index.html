@@ -18,6 +18,7 @@
           </div>
         </div>
         <div class="header-actions">
+          <button id="protagonistBtn" class="icon-btn" title="主人公人設">⚙</button>
           <button id="restartBtn" class="icon-btn" title="重啟聊天室">🔄</button>
           <button id="homeBtn" class="icon-btn" title="返回首頁">⌂</button>
         </div>
@@ -39,6 +40,37 @@
           rows="3"
         ></textarea>
         <button id="sendBtn" class="send-btn">發送</button>
+      </div>
+    </div>
+
+    <!-- 🆕 主人公人設彈窗 -->
+    <div id="protagonistModal" class="modal-overlay hidden">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>主人公人設</h3>
+          <button id="protagonistCloseBtn" class="modal-close-btn" title="關閉">✕</button>
+        </div>
+        <div class="modal-body">
+          <label class="modal-label" for="protagonistNameInput">名稱</label>
+          <input
+            id="protagonistNameInput"
+            class="modal-input"
+            type="text"
+            placeholder="主人公的名稱"
+            maxlength="50"
+          />
+          <label class="modal-label" for="protagonistBackgroundInput">背景</label>
+          <textarea
+            id="protagonistBackgroundInput"
+            class="modal-textarea"
+            placeholder="主人公的背景設定（身份、經歷、與角色的關係等）"
+            rows="8"
+            maxlength="2500"
+          ></textarea>
+        </div>
+        <div class="modal-footer">
+          <button id="protagonistSaveBtn" class="modal-save-btn">儲存</button>
+        </div>
       </div>
     </div>
 
