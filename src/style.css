@@ -77,6 +77,16 @@ body {
   background-color: #30363d;
 }
 
+/* 🆕 重啟按鈕：紅色底色（提示破壞性操作） */
+#restartBtn {
+  background-color: #b62324;
+  border-color: #b62324;
+}
+
+#restartBtn:hover {
+  background-color: #da3633;
+}
+
 /* 訊息列表區 */
 .messages-container {
   flex: 1;
@@ -88,9 +98,8 @@ body {
 }
 
 .messages-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  /* 🆕 佈局由虛擬滾動模組接管（block + 每項 margin-bottom），不再用 flex gap */
+  display: block;
 }
 
 .message {

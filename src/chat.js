@@ -1,4 +1,5 @@
 import { getConfig } from './config-loader.js';
+import { createVirtualMessageList } from './virtualMessageList.js';
 
 export async function initChat(characterId) {
   const config = getConfig();
@@ -11,7 +12,7 @@ export async function initChat(characterId) {
   const sendBtn = document.getElementById('sendBtn');
   const messagesList = document.getElementById('messagesList');
   const restartBtn = document.getElementById('restartBtn');
-  const homeBtn = document.getElementById('homeBtn');
+  const refreshBtn = document.getElementById('refreshBtn');
   const characterNameEl = document.getElementById('characterName');
   const characterStatusEl = document.getElementById('characterStatus');
   const initializingOverlay = document.getElementById('initializingOverlay');
@@ -19,6 +20,8 @@ export async function initChat(characterId) {
 
   let messages = [];
   let token = localStorage.getItem('token');
+  // 🆕 虛擬滾動實例（首次 renderMessages 時建立）；必須在 initializeChat 之前宣告，避免 TDZ
+  let vlist = null;
 
   // 🆕 顯示初始化懸浮層，禁用輸入
   function showInitializing(message = '聊天室準備中...') {
@@ -47,10 +50,10 @@ export async function initChat(characterId) {
     showInitializing('缺少角色參數，無法開啟聊天室');
   }
 
-  // 渲染訊息
-  // 🆕 用戶訊息旁加三點選單按鈕（臨時訊息 temp_ 還沒存入 DB，不顯示選單）
-  function renderMessages() {
-    messagesList.innerHTML = messages.map((msg) => `
+  // 🆕 單條訊息的 HTML 模板（供虛擬滾動模組逐項渲染）
+  // 用戶訊息旁加三點選單按鈕（臨時訊息 temp_ 還沒存入 DB，不顯示選單）
+  function renderMessageItemHTML(msg) {
+    return `
       <div class="message ${msg.role === 'user' ? 'user' : 'bot'}">
         ${msg.role !== 'user' ? '<div class="message-avatar"></div>' : ''}
         ${msg.role === 'user' && !String(msg.id).startsWith('temp_')
@@ -59,10 +62,26 @@ export async function initChat(characterId) {
         <div class="message-content">${formatMessageText(msg.text)}</div>
         ${msg.role === 'user' ? '<div class="message-avatar"></div>' : ''}
       </div>
-    `).join('');
+    `;
+  }
 
-    // 自動滾動到底部
-    messagesList.parentElement.scrollTop = messagesList.parentElement.scrollHeight;
+  // 渲染訊息：驅動虛擬滾動模組
+  // 契約不變——外部改完 messages 陣列後呼叫此函數即可（沿用原本用法，12 處呼叫點無需改動）
+  function renderMessages() {
+    if (!vlist) {
+      // 首次建立：模組建構時會做一次渲染，再強制貼底顯示最新訊息
+      vlist = createVirtualMessageList({
+        scrollEl: messagesList.parentElement,
+        listEl: messagesList,
+        getItems: () => messages,
+        keyOf: (m) => m.id,
+        renderItem: renderMessageItemHTML,
+      });
+      vlist.scrollToBottom();
+    } else {
+      // 資料變動 → 重新評估可視區並渲染（若使用者在底部會自動貼底）
+      vlist.sync();
+    }
   }
 
   // 🆕 三點按鈕事件（委派到列表上，重新渲染也不會失效）
@@ -479,20 +498,6 @@ export async function initChat(characterId) {
     }
   }
 
-  // 🆕 只更新單一訊息的 DOM（不重新渲染整個列表）
-  function updateMessageDOM(messageId, newText) {
-    const messageElements = document.querySelectorAll('.message');
-    for (let el of messageElements) {
-      const contentEl = el.querySelector('.message-content');
-      // 簡單的方式：檢查該訊息在 messages 陣列中是否存在
-      const msgIndex = messages.findIndex(m => m.id === messageId);
-      if (msgIndex !== -1 && el === messagesList.children[msgIndex]) {
-        contentEl.textContent = newText;
-        break;
-      }
-    }
-  }
-
   // 輪詢 AI 回覆（輪詢所有訊息以查找新的 AI 回應）
   // 🆕 注意：不能是 async，否則回傳的是 Promise 而不是停止函數
   function pollForAIResponse(conversationId, placeholderId, userMessageCreatedAt, tempUserId) {
@@ -842,11 +847,9 @@ export async function initChat(characterId) {
     }
   });
 
-  homeBtn.addEventListener('click', () => {
-    // 在 iframe 中使用 window.parent 改變主頁位置（避免 lobby 首頁被載進右側面板造成雙側邊欄）
-    // 🆕 必須用絕對網址：跨域 iframe 下相對路徑 '/' 會以聊天室自己的網域（5176）解析，
-    //    導致父窗口跳到裸的 5176/，再被守門踢去登入頁
-    window.parent.location.href = config.frontends.lobby;
+  // 🆕 刷新聊天頁面：重載聊天室 iframe（重新初始化、拉回最新訊息），lobby 側邊欄不受影響
+  refreshBtn.addEventListener('click', () => {
+    window.location.reload();
   });
 
   // 初始化渲染
