@@ -56,7 +56,7 @@ export async function initChat(characterId) {
         ${msg.role === 'user' && !String(msg.id).startsWith('temp_')
           ? `<button class="message-menu-btn" data-message-id="${msg.id}" title="更多選項">⋮</button>`
           : ''}
-        <div class="message-content">${escapeHtml(msg.text)}</div>
+        <div class="message-content">${formatMessageText(msg.text)}</div>
         ${msg.role === 'user' ? '<div class="message-avatar"></div>' : ''}
       </div>
     `).join('');
@@ -198,6 +198,15 @@ export async function initChat(characterId) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  // 🆕 訊息文本格式化：括弧內的敘事描寫 → 斜體淡色（並移除括弧本身）
+  // 先逃逸再轉換，支援全形（）與半形 ( ) 括弧
+  function formatMessageText(text) {
+    const escaped = escapeHtml(text);
+    return escaped
+      .replace(/（([^（）]*)）/g, '<span class="narrative">$1</span>')
+      .replace(/\(([^()]*)\)/g, '<span class="narrative">$1</span>');
   }
 
   // 初始化聊天室
@@ -682,55 +691,59 @@ export async function initChat(characterId) {
   });
 
   // 重啟聊天室
+  // 🆕 【複用既有管線】不再走專用 restart API，改為：
+  //    1. 呼叫現有的刪除聊天室流程（先清 RAG、失敗中止、主角人設一併清除）
+  //    2. 成功後走現有的建立聊天室流程（最新角色資料 + RAG 完整初始化 + 就緒輪詢）
   restartBtn.addEventListener('click', async () => {
-    if (confirm('確定要重啟聊天室嗎？這將刪除所有現有聊天記錄。')) {
+    if (confirm('確定要重啟聊天室嗎？這將刪除所有現有聊天記錄（包含主人公人設）。')) {
       try {
-        // 🆕 顯示重啟中的懸浮層
+        // 顯示重啟中的懸浮層
         showInitializing('聊天室重啟中...');
 
-        // 直接用 conversationId 呼叫重啟 API
         const conversationId = sessionStorage.getItem('conversationId');
         if (!conversationId) {
           throw new Error('聊天室 ID 不存在，請重新載入頁面');
         }
 
-        console.log('🔄 [chat.js] 重啟聊天室，ID:', conversationId);
-
-        const restartRes = await fetch(
-          `${GATEWAY_URL}/conversations/${conversationId}/restart`,
+        // === 1. 刪除舊聊天室（現有刪除管線）===
+        console.log('🔄 [chat.js] 重啟：刪除舊聊天室，ID:', conversationId);
+        const delRes = await fetch(
+          `${GATEWAY_URL}/conversations/${conversationId}`,
           {
-            method: 'POST',
+            method: 'DELETE',
             headers: { 'Authorization': `Bearer ${token}` },
           }
         );
 
-        if (!restartRes.ok) {
-          throw new Error(`重啟失敗: ${restartRes.status}`);
+        if (!delRes.ok) {
+          const data = await delRes.json().catch(() => ({}));
+          throw new Error(data.message || `刪除失敗: ${delRes.status}`);
+        }
+        console.log('✅ [chat.js] 舊聊天室已刪除（含 RAG 資料與主人公人設）');
+
+        // === 2. 建立新聊天室（現有建立管線：RAG 初始化 + 輪詢就緒）===
+        showInitializing('聊天室準備中...');
+        const conversation = await pollForConversation(characterId);
+
+        if (!conversation) {
+          // 建立失敗或超時：維持懸浮層並顯示錯誤
+          showInitializing('聊天室建立失敗，請重新整理頁面再試');
+          return;
         }
 
-        const result = await restartRes.json();
-        const newConversationId = result.data.conversationId;
-        const newMessages = result.data.messages || [];
+        console.log('✅ [chat.js] 新聊天室已就緒，ID:', conversation.conversationId, '訊息數:', conversation.messages?.length || 0);
 
-        console.log('✅ [chat.js] 聊天室已重啟，新對話 ID:', newConversationId, '訊息數:', newMessages.length);
-
-        // 1. 更新 sessionStorage 中的 conversationId
-        sessionStorage.setItem('conversationId', newConversationId);
-
-        // 2. 直接使用後端返回的訊息（包括開場白）
-        messages = newMessages;
-        console.log('✅ [chat.js] 新對話訊息已更新');
-
+        // === 3. 更新前端狀態 ===
+        sessionStorage.setItem('conversationId', conversation.conversationId);
+        messages = conversation.messages || [];
         messageInput.value = '';
         renderMessages();
 
         console.log('✅ [chat.js] 重啟完成');
-
-        // 隱藏懸浮層
         hideInitializing();
       } catch (error) {
         console.error('❌ [chat.js] 重啟失敗:', error);
-        alert('重啟失敗，請稍後重試。');
+        alert(`重啟失敗: ${error.message || '請稍後重試'}`);
         hideInitializing();
       }
     }

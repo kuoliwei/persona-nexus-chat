@@ -127,6 +127,7 @@ body {
   padding: 8px 12px;
   border-radius: 8px;
   word-wrap: break-word;
+  white-space: pre-wrap;  /* 🆕 保留模型輸出的換行符（敘事與對話分行） */
 }
 
 .message.bot .message-content {
@@ -138,6 +139,12 @@ body {
 .message.user .message-content {
   background-color: #6366f1;
   color: #ffffff;
+}
+
+/* 🆕 敘事描寫（原括弧內容）：斜體、略淡 */
+.narrative {
+  font-style: italic;
+  opacity: 0.75;
 }
 
 /* 🆕 訊息三點選單按鈕 */
