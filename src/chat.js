@@ -501,7 +501,7 @@ export async function initChat(characterId) {
   // 輪詢 AI 回覆（輪詢所有訊息以查找新的 AI 回應）
   // 🆕 注意：不能是 async，否則回傳的是 Promise 而不是停止函數
   function pollForAIResponse(conversationId, placeholderId, userMessageCreatedAt, tempUserId) {
-    const maxAttempts = 120; // 最多輪詢 120 次 (60 秒)
+    const maxAttempts = 120; // 最多輪詢 120 次 × 1 秒 = 120 秒，對齊後端 generateResponse timeout
     let attempts = 0;
 
     const pollInterval = setInterval(async () => {
@@ -675,7 +675,7 @@ export async function initChat(characterId) {
         messageInput.disabled = false;
         sendBtn.disabled = false;
       }
-    }, 500); // 每 500ms 查詢一次
+    }, 1000); // 每 1 秒查詢一次
 
     // 🆕 返回停止輪詢的函數
     return () => {
