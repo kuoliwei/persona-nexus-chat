@@ -675,7 +675,27 @@ export async function initChat(characterId) {
           sendBtn.disabled = false;
         }
       } catch (error) {
+        // 輪詢中斷（網路異常，或聊天室在生成期間被刪除而回 404/403）。
+        // 這裡必須把佔位符換成失敗訊息——只停掉輪詢的話，「正在思考中…」
+        // 會永遠留在畫面上，使用者無從得知已經不會有回覆了。
         console.error('❌ [chat.js] 輪詢失敗:', error);
+
+        const placeholderIndex = messages.findIndex(m => m.id === placeholderId);
+        const failureMessage = {
+          id: `failure_${Date.now()}`,
+          role: 'assistant',
+          text: `（${document.getElementById('characterName').textContent} 回應失敗: ${error.message || '連線中斷'}，請重試）`,
+          status: 'failed',
+          isPlaceholder: true,
+        };
+
+        if (placeholderIndex !== -1) {
+          messages[placeholderIndex] = failureMessage;
+        } else {
+          messages.push(failureMessage);
+        }
+
+        renderMessages();
         clearInterval(pollInterval);
         messageInput.disabled = false;
         sendBtn.disabled = false;
