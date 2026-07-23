@@ -1,13 +1,9 @@
 import './style.css';
 import { initChat } from './chat.js';
-import { loadConfig, getConfig } from './config-loader.js';
-
 console.log('📡 [main.js] persona-nexus-chat 初始化開始');
 
-// 載入配置
-await loadConfig();
-const config = getConfig();
-// 同源部署：登入前端固定在 /login
+// 同源部署後不需要向 gateway 取設定（API 一律走相對路徑），因此不再載入 config。
+// 後端可達性由外層 lobby 啟動時探測；此頁是由 lobby 以 iframe 載入的。
 const LOGIN_APP_URL = '/login';
 
 // 讀取 URL 參數

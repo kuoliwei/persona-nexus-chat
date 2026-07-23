@@ -1,9 +1,7 @@
-import { getConfig } from './config-loader.js';
 import { createVirtualMessageList } from './virtualMessageList.js';
 import { positionMenu } from './menuPosition.js';
 
 export async function initChat(characterId) {
-  const config = getConfig();
 
   console.log('📡 [chat.js] 初始化聊天室，characterId:', characterId);
 
