@@ -7,7 +7,8 @@ console.log('📡 [main.js] persona-nexus-chat 初始化開始');
 // 載入配置
 await loadConfig();
 const config = getConfig();
-const LOGIN_APP_URL = config.frontends.web;
+// 同源部署：登入前端固定在 /login
+const LOGIN_APP_URL = '/login';
 
 // 讀取 URL 參數
 const urlParams = new URLSearchParams(window.location.search);

@@ -1,10 +1,9 @@
 import { getConfig } from './config-loader.js';
 import { createVirtualMessageList } from './virtualMessageList.js';
+import { positionMenu } from './menuPosition.js';
 
 export async function initChat(characterId) {
   const config = getConfig();
-  // 直接硬編碼 gateway URL（像 persona-nexus-character 的做法）
-  const GATEWAY_URL = 'http://localhost:8000';
 
   console.log('📡 [chat.js] 初始化聊天室，characterId:', characterId);
 
@@ -93,15 +92,25 @@ export async function initChat(characterId) {
     }
   });
 
+  // 目前開啟中選單的關閉函式，開新選單前用它把舊的連同監聽器一起收掉
+  let dismissOpenMenu = null;
+
   // 🆕 顯示訊息選單（參考 lobby sidebar 的 conversation-menu 效果）
   function showMessageMenu(event, messageId, anchorBtn) {
     // 先關掉已存在的選單（避免疊加）
-    const existingMenu = document.querySelector('.message-menu');
-    if (existingMenu) existingMenu.remove();
+    if (dismissOpenMenu) dismissOpenMenu();
 
     // 建立菜單
     const menu = document.createElement('div');
     menu.className = 'message-menu';
+
+    // 關閉選單：移除節點的同時一定解除監聽器，避免監聽器殘留累積
+    function dismissMenu() {
+      menu.remove();
+      document.removeEventListener('click', closeMenu);
+      dismissOpenMenu = null;
+    }
+    dismissOpenMenu = dismissMenu;
 
     // 編輯選項（功能未實作，先佔位）
     const editOption = document.createElement('div');
@@ -109,7 +118,7 @@ export async function initChat(characterId) {
     editOption.textContent = '✏️ 編輯';
     editOption.addEventListener('click', () => {
       console.log(`✏️ [chat.js] 編輯訊息（尚未實作）: messageId=${messageId}`);
-      menu.remove();
+      dismissMenu();
     });
 
     // 刪除選項：刪除該訊息及其後所有訊息（回溯式刪除）
@@ -117,7 +126,7 @@ export async function initChat(characterId) {
     deleteOption.className = 'message-menu-item';
     deleteOption.textContent = '🗑️ 刪除';
     deleteOption.addEventListener('click', async () => {
-      menu.remove();
+      dismissMenu();
       if (confirm('確定要刪除這條訊息嗎？\n該訊息之後的所有對話（包含 AI 回覆）也會一併刪除。')) {
         await deleteMessage(messageId);
       }
@@ -126,13 +135,12 @@ export async function initChat(characterId) {
     menu.appendChild(editOption);
     menu.appendChild(deleteOption);
 
-    // 定位菜單到按鈕下方
-    const rect = anchorBtn.getBoundingClientRect();
+    // 先掛上 DOM 才量得到選單尺寸，再依可用空間定位（避免飛出畫面）
     menu.style.position = 'fixed';
-    menu.style.top = `${rect.bottom + 4}px`;
-    menu.style.left = `${rect.left - 80}px`;
-
+    menu.style.visibility = 'hidden';
     document.body.appendChild(menu);
+    positionMenu(menu, anchorBtn);
+    menu.style.visibility = '';
 
     // 點擊外部關閉菜單
     setTimeout(() => {
@@ -141,8 +149,7 @@ export async function initChat(characterId) {
 
     function closeMenu(e) {
       if (!menu.contains(e.target) && e.target !== anchorBtn) {
-        menu.remove();
-        document.removeEventListener('click', closeMenu);
+        dismissMenu();
       }
     }
   }
@@ -177,7 +184,7 @@ export async function initChat(characterId) {
       console.log(`🗑️ [chat.js] 刪除訊息: conversationId=${conversationId}, messageId=${messageId}`);
 
       const res = await fetch(
-        `${GATEWAY_URL}/conversations/${conversationId}/messages/${messageId}`,
+        `/api/conversations/${conversationId}/messages/${messageId}`,
         {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` },
@@ -234,7 +241,7 @@ export async function initChat(characterId) {
       console.log('📡 [chat.js] 初始化：獲取角色信息...');
 
       // 1. 獲取角色名稱
-      const characterRes = await fetch(`${GATEWAY_URL}/characters/${charId}`, {
+      const characterRes = await fetch(`/api/characters/${charId}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
@@ -289,7 +296,7 @@ export async function initChat(characterId) {
       console.log(`  ┌─ 【輪詢 ${attempt}/${maxAttempts}】 GET /conversations/character/${charId}`);
 
       try {
-        const res = await fetch(`${GATEWAY_URL}/conversations/character/${charId}`, {
+        const res = await fetch(`/api/conversations/character/${charId}`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
 
@@ -410,7 +417,7 @@ export async function initChat(characterId) {
     try {
       console.log(`🐛 [DEBUG] POST body 送出: { text: "${text.substring(0, 30)}...", tempUserId: "${tempUserId}" }`);
       const sendRes = await fetch(
-        `${GATEWAY_URL}/conversations/${conversationId}/messages`,
+        `/api/conversations/${conversationId}/messages`,
         {
           method: 'POST',
           headers: {
@@ -510,7 +517,7 @@ export async function initChat(characterId) {
       try {
         // 🔑 只輪詢 AI 生成狀態
         const statusRes = await fetch(
-          `${GATEWAY_URL}/conversations/${conversationId}/ai-generation-status`,
+          `/api/conversations/${conversationId}/ai-generation-status`,
           {
             method: 'GET',
             headers: {
@@ -564,7 +571,7 @@ export async function initChat(characterId) {
           console.log(`✅ [chat.js] AI 生成完成，開始取得消息...`);
 
           const messagesRes = await fetch(
-            `${GATEWAY_URL}/conversations/${conversationId}/messages`,
+            `/api/conversations/${conversationId}/messages`,
             {
               method: 'GET',
               headers: {
@@ -713,7 +720,7 @@ export async function initChat(characterId) {
         // === 1. 刪除舊聊天室（現有刪除管線）===
         console.log('🔄 [chat.js] 重啟：刪除舊聊天室，ID:', conversationId);
         const delRes = await fetch(
-          `${GATEWAY_URL}/conversations/${conversationId}`,
+          `/api/conversations/${conversationId}`,
           {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${token}` },
@@ -774,7 +781,7 @@ export async function initChat(characterId) {
 
     try {
       console.log(`👤 [chat.js] 載入主人公人設: conversationId=${conversationId}`);
-      const res = await fetch(`${GATEWAY_URL}/conversations/${conversationId}/protagonist`, {
+      const res = await fetch(`/api/conversations/${conversationId}/protagonist`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
@@ -819,7 +826,7 @@ export async function initChat(characterId) {
 
     try {
       console.log(`👤 [chat.js] 儲存主人公人設: 名稱=${protagonistName || '(空)'}, 背景=${protagonistBackground.length} 字`);
-      const res = await fetch(`${GATEWAY_URL}/conversations/${conversationId}/protagonist`, {
+      const res = await fetch(`/api/conversations/${conversationId}/protagonist`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,

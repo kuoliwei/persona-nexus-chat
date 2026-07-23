@@ -9,14 +9,16 @@ body {
   background-color: #0d1117;
   color: #c9d1d9;
   line-height: 1.6;
-  height: 100vh;
+  /* 100vh 在手機瀏覽器包含會自動收起的網址列，導致輸入框被推出可視範圍；
+     100dvh（dynamic viewport height）會隨網址列開合調整，避免此問題。 */
+  height: 100dvh;
   overflow: hidden;
 }
 
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100dvh;
   background-color: #0d1117;
 }
 
@@ -137,6 +139,13 @@ body {
   border-radius: 8px;
   word-wrap: break-word;
   white-space: pre-wrap;  /* 🆕 保留模型輸出的換行符（敘事與對話分行） */
+}
+
+/* 窄螢幕：60% 在手機上一行放不了幾個字，放寬到 85% */
+@media (max-width: 600px) {
+  .message-content {
+    max-width: 85%;
+  }
 }
 
 .message.bot .message-content {
