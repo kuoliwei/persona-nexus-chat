@@ -1,5 +1,6 @@
 import './style.css';
 import { initChat } from './chat.js';
+import { setToken } from './session.js';
 console.log('📡 [main.js] persona-nexus-chat 初始化開始');
 
 // 同源部署後不需要向 gateway 取設定（API 一律走相對路徑），因此不再載入 config。
@@ -19,7 +20,7 @@ if (!characterId || !token) {
   window.location.href = `${LOGIN_APP_URL}/`;
 } else {
   // 將 token 存入 localStorage（供 chat.js 使用）
-  localStorage.setItem('token', token);
+  setToken(token);
 
   // 初始化聊天室
   await initChat(characterId);

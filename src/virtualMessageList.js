@@ -62,6 +62,16 @@ export function createVirtualMessageList({
 
   // 根據目前捲動位置，算出應該渲染的訊息區間
   function computeRange(items) {
+    // 空陣列：回傳空區間直接結束。
+    // 本模組是通用元件，不能假設呼叫端一定給非空陣列——底下的計算會存取
+    // items[start]，空陣列時 items[0] 是 undefined，keyOf(undefined) 會拋 TypeError。
+    // 實際踩過：聊天室建立逾時後 chat.js 仍以 messages === [] 呼叫本模組。
+    // end 回 -1 讓 renderWindow 的 `for (i = start; i <= end; i++)` 自然不執行，
+    // 同時仍會清掉上一輪殘留的氣泡節點。
+    if (items.length === 0) {
+      return { start: 0, end: -1, offsetTop: 0 };
+    }
+
     const scrollTop = scrollEl.scrollTop;
     const viewportH = scrollEl.clientHeight;
 

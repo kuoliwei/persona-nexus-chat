@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  // 同源部署：Caddy 把 /chat* 原樣轉發給這台 dev server（不 strip prefix），
+  // base 必須跟 Caddy 的路徑對齊，否則資產（JS/CSS）會用絕對路徑 /src/... 請求，
+  // 掉進 Caddy 的預設 catch-all（lobby），載入到錯的前端資產。
   base: '/chat/',
   server: {
     port: 5176,

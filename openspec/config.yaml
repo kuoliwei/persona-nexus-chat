@@ -1,0 +1,80 @@
+schema: spec-driven
+
+# Project context
+# 顯示給 AI 在建立/修改 openspec 文件時參考。本檔描述的是 persona-nexus-chat「當前實際」的架構，
+# 不是理想版——刻意記錄遺留代碼與過時假設，因為它們正是後續「規格驅動優化」的對象。
+context: |
+  ## persona-nexus-chat（Persona Nexus 平台的聊天室前端）
+
+  類 Character.ai 的 AI 角色扮演平台其中一個前端微服務，多頁應用中的其中一頁，負責
+  **使用者與 AI 角色的聊天室 UI**（訊息收發、主人公人設編輯、聊天室重啟）。
+  學習性質專案，協作偏好「教學引導、讓使用者自己動手」——解釋原理、給方向，不直接貼完整程式碼。
+
+  ### 技術棧
+  Vite 8（build tool，無 UI 框架，原生 ESM JavaScript）。無 TypeScript、無測試框架、無 lint 設定。
+
+  ### 與其他三個前端（auth/character/lobby）的關鍵差異
+  - **沒有 `config-loader.js`**：不向 gateway 探測可達性，也不索取設定。API 一律走相對路徑
+    （`/api/...`），後端可達性由外層 lobby 負責探測。
+  - **不是獨立分頁跳轉載入，而是由 `persona-nexus-lobby` 以 iframe 載入**，`characterId`／
+    `token` 透過 URL query string 傳入（而非讀取 `localStorage` 既有 session）。
+  - **本專案從一開始就是獨立 git repo**（`.git`、遠端 `origin/main` 均已存在），不同於
+    auth/character 當初優化時是無 git 狀態。
+
+  ### 當前架構（同源部署，經 Caddy）
+  ```
+  瀏覽器 → http://localhost:8080（Caddy 反向代理）
+             ├─ /chat/*（本專案，Vite dev server 5176，base: '/chat/'）
+             ├─ /api/* → api-gateway(8000) → chat-service / character-service / ai-service
+             └─ /（其餘）→ persona-nexus-lobby(5175，以 iframe 嵌入本專案）
+  ```
+  `src/main.js` 解析 URL query string 取得 `characterId`／`token`，寫入 `localStorage`
+  後呼叫 `initChat()`；缺任一參數就導向 `/login/`。
+
+  ### 頁面結構
+  `index.html` 是單一頁面：聊天頭部（角色資訊 + 三個功能按鈕）、訊息列表（虛擬滾動）、
+  輸入區、主人公人設彈窗、初始化懸浮層。全部由 `src/chat.js` 監聽 DOM 事件、直接操作
+  class/文字/disabled 狀態，無任何前端路由或元件框架。
+
+  ### 聊天行為（已對接真實後端，非模擬）
+  - 進頁面輪詢 `/api/conversations/character/:charId` 直到聊天室就緒或建立失敗。
+  - 發送訊息採樂觀更新 + 輪詢 AI 生成狀態，完成後用「臨時 ID ↔ 真實 ID」配對資訊替換佔位符。
+  - 刪除訊息為回溯式（該訊息與其後所有訊息一併刪除）；AI 生成中會被後端以 409 拒絕。
+  - 重啟聊天室複用既有刪除+建立管線；主人公人設可讀取/儲存。
+  - 所有 API 呼叫（`fetch()`）直接寫在 `src/chat.js` 內，沒有集中的 `api.js` 封裝
+    （`src/api.js` 現存但內容只有 JWT 解碼，且**沒有任何檔案 import 它**——是死代碼）。
+
+  ### 已知的遺留狀況
+  - `src/api.js`（`getCurrentUserId()`／`decodeToken()`）完全沒有呼叫點。
+  - 無任何 `aria-live`／`aria-label`／`role` 屬性（整個專案）。
+  - `Authorization: Bearer ${token}` header 組裝與失敗訊息物件建構，在 `chat.js` 內重複多處。
+
+  ### 架構原則（平台層級）
+  - 前端一律打 api-gateway（實務上先進 Caddy），不直連任何後端 service 裸 port。
+  - 同源部署後不需要向 `/api/config` 動態索取絕對網址，一律用寫死的相對路徑常數
+    （`persona-nexus-lobby` 已驗證的模式，`persona-nexus-auth`／`persona-nexus-character`
+    優化後也已改用此模式）。
+
+  ### 協作約定
+  - 學習導向，優先解釋原理與設計思考。
+  - 本服務是獨立 git repo（非 monorepo），且已有既存的 commit 歷史與遠端。
+
+# Per-artifact rules
+rules:
+  proposal:
+    - 中文撰寫，200-500 字為宜
+    - 包含「為什麼做」(Why)、「變更清單」(What Changes)、「影響範圍」(Impact)
+    - 若動到 UI 可觀察行為（文案、跳轉時機、表單驗證），清楚列舉新增或移除項
+    - 修改既有行為要說明是否影響其他前端（例如 localStorage key、URL 參數格式）
+  specs:
+    - 使用 Given/When/Then scenario 格式，每個 Requirement 至少一個 Scenario
+    - RFC 2119 關鍵字（MUST/SHALL/SHOULD/MAY）標示需求強度
+    - 涉及與後端契約的行為，要註明實際打的 HTTP method/路徑與請求/回應格式
+    - Delta Spec 格式分 ADDED / MODIFIED / REMOVED 三節
+  design:
+    - 架構決策與權衡說明；跨前端的資料流（如 token 傳遞）畫時序或流程圖
+    - 明確標示「當前」與「優化後」的差異（架構圖前後對照）
+  tasks:
+    - 每個任務控制在 2-3 小時內可完成
+    - 層級清楚（子任務縮排），標示依賴關係
+    - 檢查項包含手動瀏覽器驗證（本專案無單元測試框架）

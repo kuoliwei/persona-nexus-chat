@@ -18,9 +18,9 @@
           </div>
         </div>
         <div class="header-actions">
-          <button id="protagonistBtn" class="icon-btn" title="主人公人設">🎭</button>
-          <button id="refreshBtn" class="icon-btn" title="刷新聊天頁面">🔄</button>
-          <button id="restartBtn" class="icon-btn" title="重啟聊天室">♻️</button>
+          <button id="protagonistBtn" class="icon-btn" title="主人公人設" aria-label="主人公人設">🎭</button>
+          <button id="refreshBtn" class="icon-btn" title="刷新聊天頁面" aria-label="刷新聊天頁面">🔄</button>
+          <button id="restartBtn" class="icon-btn" title="重啟聊天室" aria-label="重啟聊天室">♻️</button>
         </div>
       </div>
 
@@ -44,11 +44,11 @@
     </div>
 
     <!-- 🆕 主人公人設彈窗 -->
-    <div id="protagonistModal" class="modal-overlay hidden">
+    <div id="protagonistModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="protagonistModalTitle">
       <div class="modal-box">
         <div class="modal-header">
-          <h3>主人公人設</h3>
-          <button id="protagonistCloseBtn" class="modal-close-btn" title="關閉">✕</button>
+          <h3 id="protagonistModalTitle">主人公人設</h3>
+          <button id="protagonistCloseBtn" class="modal-close-btn" title="關閉" aria-label="關閉">✕</button>
         </div>
         <div class="modal-body">
           <label class="modal-label" for="protagonistNameInput">名稱</label>
@@ -78,7 +78,7 @@
     <div id="initializingOverlay" class="initializing-overlay">
       <div class="initializing-content">
         <div class="loading-spinner"></div>
-        <p id="initializingMessage">聊天室準備中...</p>
+        <p id="initializingMessage" role="status" aria-live="polite">聊天室準備中...</p>
       </div>
     </div>
 
