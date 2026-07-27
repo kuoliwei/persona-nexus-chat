@@ -597,9 +597,9 @@ export async function initChat(characterId) {
         const conversation = await pollForConversation(characterId);
 
         if (!conversation) {
-          // 建立失敗或超時：維持懸浮層並顯示錯誤
-          showInitializing('聊天室建立失敗，請重新整理頁面再試');
-          return;
+          // 建立失敗或超時：丟給外層 catch 統一處理（toast + 解除懸浮層），
+          // 不要在這裡 return——否則永遠走不到 catch，toast 架構上不可能顯示。
+          throw new Error('聊天室建立失敗，請重新整理頁面再試');
         }
 
         console.log('✅ [chat.js] 新聊天室已就緒，ID:', conversation.conversationId, '訊息數:', conversation.messages?.length || 0);
