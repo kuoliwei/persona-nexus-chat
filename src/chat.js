@@ -410,6 +410,17 @@ export async function initChat(characterId) {
 
   // 輪詢 AI 回覆（輪詢所有訊息以查找新的 AI 回應）
   // 注意：不能是 async，否則回傳的是 Promise 而不是停止函數
+  //
+  // 🔑 【回合守門】後端的生成狀態是持久化在聊天室上的單一組欄位，會跨回合殘留。
+  // 本函式在 POST 送出「之前」就開始輪詢（見 sendMessage），因此第一次查詢（t=1000ms）
+  // 有機會早於後端上鎖，讀到的會是上一回合的 completed 與上一回合的訊息 ID。
+  // 無條件採信的後果：剛送出的使用者訊息被換成上一回合的舊訊息、佔位符被換成上一回合的
+  // 舊回覆、輪詢停止——陣列尾端出現重複 id，虛擬滾動以 id 為 key，兩個氣泡直接從畫面消失。
+  // 因此每次拿到狀態都先比對 tempUserId，確認屬於本回合才動畫面。
+  //
+  // 為何不改成「await POST 成功後才開始輪詢」：那也能避開這個視窗（後端是先上鎖才回應），
+  // 但正確性就押在後端內部的語句順序上——日後有人把 tryAcquireLock 往後挪，前端會無聲
+  // 退回同樣的 bug。守門法對時序完全不敏感，是比較穩的不變式。
   function pollForAIResponse(conversationId, placeholderId, userMessageCreatedAt, tempUserId) {
     const maxAttempts = 120; // 最多輪詢 120 次 × 1 秒 = 120 秒，對齊後端 generateResponse timeout
     let attempts = 0;
@@ -428,8 +439,16 @@ export async function initChat(characterId) {
         const generationStatus = await statusRes.json();
         console.log(`⏳ [chat.js] 查詢 AI 狀態 (${attempts}): ${JSON.stringify(generationStatus)}`);
 
+        // 【回合守門】只認 tempUserId 等於本回合的狀態。不相符 = 本回合還沒在後端上鎖，
+        // 讀到的是上一回合殘留的結果 → 不動畫面、不停輪詢、不解除輸入禁用，等下一次查詢。
+        // attempts 照常累加（在上面），超時保護維持絕對時間上限，不因守門而無限等待。
+        const isThisTurn = generationStatus && generationStatus.tempUserId === tempUserId;
+        if (generationStatus && !isThisTurn && generationStatus.status !== 'unknown') {
+          console.log(`⏭️  [chat.js] 狀態不屬於本回合（期望 tempUserId=${tempUserId}，實際=${generationStatus.tempUserId}，status=${generationStatus.status}），繼續輪詢`);
+        }
+
         // ❌ 如果生成失敗
-        if (generationStatus && generationStatus.status === 'failed') {
+        if (isThisTurn && generationStatus.status === 'failed') {
           console.error(`❌ [chat.js] AI 生成失敗: ${generationStatus.error}`);
 
           // ✅ 保留用戶消息，即使 AI 失敗
@@ -449,7 +468,7 @@ export async function initChat(characterId) {
         }
 
         // ✅ 如果生成完成，才調用消息 API
-        if (generationStatus && generationStatus.status === 'completed') {
+        if (isThisTurn && generationStatus.status === 'completed') {
           console.log(`✅ [chat.js] AI 生成完成，開始取得消息...`);
 
           const messagesRes = await api.fetchMessages(conversationId, token);
