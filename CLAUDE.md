@@ -19,12 +19,17 @@
 ```
 index.html              聊天室主頁面（含主人公人設彈窗、初始化懸浮層）
 vite.config.js          Vite 配置：base '/chat/'、固定 port 5176、host: true、allowedHosts: true（同源部署經 Caddy 轉發）
-package.json            依賴管理（僅 devDependency: vite）
+package.json            依賴管理（devDependency: vite；playwright 為瀏覽器自動化回歸驗證用，見 chat-frontend-code-quality change）
 src/
   main.js               入口：解析 URL 參數（characterId/token）、經 session.js 寫入 localStorage、呼叫 initChat()
   session.js            跨頁狀態單一入口：getToken()/setToken()（localStorage）、getConversationId()/setConversationId()（sessionStorage）
   api.js                API 層：集中封裝全部後端請求（角色資訊、聊天室輪詢、訊息收發/刪除、AI 生成狀態、主人公人設、聊天室刪除）與 Authorization header 組裝
-  chat.js                聊天室協調層：訊息渲染（含虛擬滾動整合）、發送/輪詢 AI 回覆、刪除訊息、重啟聊天室
+  chat.js                聊天室協調層（183 行）：只做 DOM 查詢、業務模組實例化與依賴接線（wiring）、事件綁定；業務邏輯全部委派給下列 5 個模組
+  messageStore.js         訊息陣列的唯一寫入點：createMessageStore() 工廠函式，getAll/setAll/push/replaceOrPush/removeByIds/findById，含 makeFailureMessage() 輔助函式
+  messageFormatter.js     純文本轉換工具：escapeHtml()（XSS 逃逸）、formatMessageText()（括弧敘事轉斜體樣式），無 DOM 狀態依賴
+  messageSender.js        發送訊息 + 樂觀更新：createMessageSender() 工廠函式，立即顯示使用者訊息與思考中佔位符後非同步 POST 到後端，並啟動 AI 回覆輪詢
+  aiResponsePoller.js     AI 回覆輪詢：createAiResponsePoller() 工廠函式，含回合守門（tempUserId 比對，見檔內不變式注釋）與 ID/時間雙軌配對替換邏輯
+  conversationManager.js  聊天室生命週期 + 對話層級訊息操作：createConversationManager() 工廠函式，封裝初始化（含輪詢建立狀態）、重啟聊天室、刪除訊息（回溯式）三個職責
   toast.js               懸浮通知（role="status" aria-live="polite"）
   messageMenu.js         訊息三點選單（建立/定位/關閉，定位委派給 menuPosition.js）
   protagonistModal.js    主人公人設彈窗（開關/載入/儲存/焦點管理/Escape 關閉）
@@ -88,3 +93,17 @@ src/
   錯誤呈現機制；刻意保留 AI 回覆失敗的「失敗氣泡」，因其語意是對話流程的一部分，
   詳見 `openspec/changes/simplify-chat-ui/design.md`）。
 - **本輪刻意不處理**：三點選單「編輯」選項維持原樣佔位（刻意的未完成功能，非本輪範圍）。
+
+依《程式撰寫設計原則.md》稽核後，以 change `chat-frontend-code-quality` 做了第二輪優化（拆分依據
+是「修改理由是否獨立」而非行數）：
+- 原本 655 行的 `chat.js` 依職責邊界拆成 5 個模組：`messageStore.js`（訊息陣列讀寫單一入口）、
+  `messageFormatter.js`（純文本轉換）、`messageSender.js`（發送+樂觀更新）、
+  `aiResponsePoller.js`（AI 輪詢+回合守門，原有不變式注釋原樣保留）、
+  `conversationManager.js`（聊天室生命週期：初始化/重啟/刪除訊息）。
+  `chat.js` 精簡為 183 行的協調層，只做 DOM 查詢、模組實例化接線、事件綁定。
+- 拆分後的模組沿用專案既有的工廠函式模式（`createXxx(deps) → { methods }`，與
+  `virtualMessageList.js`／`protagonistModal.js` 一致），UI 副作用一律透過回呼注入
+  （`onRender`／`onInputLock`／`getCharacterName`），邏輯模組不直接碰 DOM。
+- 純內部重構，透過 Playwright 對真實後端完整回歸走查（發送、樂觀更新、AI 回覆、回溯式刪除、
+  重啟、連續發送的回合守門情境）驗證行為與拆分前一致，全程零 console error。
+- 詳見 `openspec/changes/chat-frontend-code-quality/`（design.md 記錄完整決策依據）。
