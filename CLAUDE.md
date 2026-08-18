@@ -1,6 +1,6 @@
 # persona-nexus-chat
 
-聊天室前端，使用者在此與 AI 角色進行對話。Vite + Vanilla JS，無框架。Port 5176（已用 `vite.config.js` 固定 + `strictPort: true`）。由 `persona-nexus-lobby` 以 iframe 載入，`characterId`／`token` 透過 URL query string 傳入。
+聊天室前端，使用者在此與 AI 角色進行對話。Vite + Vanilla JS，無框架。Port 5176（已用 `vite.config.js` 固定 + `strictPort: true`）。由 `persona-nexus-lobby` 以 iframe 載入，`characterId` 透過 URL query string 傳入；token 直接讀共享 localStorage（`direct-token-read` change，2026-08，同源部署下與 lobby/auth 共享同一個 origin）。
 
 ## 平台架構總覽
 
@@ -21,8 +21,8 @@ index.html              聊天室主頁面（含主人公人設彈窗、初始�
 vite.config.js          Vite 配置：base '/chat/'、固定 port 5176、host: true、allowedHosts: true（同源部署經 Caddy 轉發）
 package.json            依賴管理（devDependency: vite；playwright 為瀏覽器自動化回歸驗證用，見 chat-frontend-code-quality change）
 src/
-  main.js               入口：解析 URL 參數（characterId/token）、經 session.js 寫入 localStorage、呼叫 initChat()
-  session.js            跨頁狀態單一入口：getToken()/setToken()（localStorage）、getConversationId()/setConversationId()（sessionStorage）
+  main.js               入口：解析 URL 參數（characterId）、經 session.js 的 getToken() 檢查登入狀態、呼叫 initChat()
+  session.js            跨頁狀態單一入口：getToken()（localStorage）、getConversationId()/setConversationId()（sessionStorage）
   api.js                API 層：集中封裝全部後端請求（角色資訊、聊天室輪詢、訊息收發/刪除、AI 生成狀態、主人公人設、聊天室刪除）與 Authorization header 組裝
   chat.js                聊天室協調層（183 行）：只做 DOM 查詢、業務模組實例化與依賴接線（wiring）、事件綁定；業務邏輯全部委派給下列 5 個模組
   messageStore.js         訊息陣列的唯一寫入點：createMessageStore() 工廠函式，getAll/setAll/push/replaceOrPush/removeByIds/findById，含 makeFailureMessage() 輔助函式
@@ -59,8 +59,11 @@ src/
 
 ## 認證與守門機制
 
-- `main.js` 進頁面時解析 URL query string 的 `characterId` 與 `token`；缺少任一項就導向 `/login/`。
-- 有 token 就呼叫 `session.js` 的 `setToken(token)`（包 `localStorage`），供 `chat.js` 內所有 API 呼叫組裝 `Authorization: Bearer` header 使用。
+- `main.js` 進頁面時解析 URL query string 的 `characterId`，並檢查 `session.js` 的
+  `getToken()`（讀共享 `localStorage`）；`characterId` 缺失或未登入（無 token）就導向
+  `/login/`。同源部署下與 lobby/auth 共享同一個 origin 的 localStorage，不再需要（也不再
+  支援）從網址 `token` 查詢參數接收 token（`direct-token-read` change，2026-08）。
+- `getToken()` 供 `chat.js` 內所有 API 呼叫組裝 `Authorization: Bearer` header 使用。
 
 ## 鍵盤快捷鍵
 
@@ -107,3 +110,12 @@ src/
 - 純內部重構，透過 Playwright 對真實後端完整回歸走查（發送、樂觀更新、AI 回覆、回溯式刪除、
   重啟、連續發送的回合守門情境）驗證行為與拆分前一致，全程零 console error。
 - 詳見 `openspec/changes/chat-frontend-code-quality/`（design.md 記錄完整決策依據）。
+
+依《網頁架構設計原則》稽核後，以 change `direct-token-read`（2026-08）跟進
+`persona-nexus-rpg-scene` 已示範的模式：`main.js` 不再要求網址帶 `?token=` 才能運作（本專案
+先前是全平台唯一一個「網址沒 token 就強制導回登入頁」的前端，即使 localStorage 已有合法 token
+也一樣），改成直接檢查 `session.js` 的 `getToken()`；`setToken()` 因此變成零呼叫點一併移除。
+這是 `persona-nexus-lobby` 同步進行的 `iframe-token-param-removal`（iframe 網址不再帶 token）
+的前置依賴——若順序顛倒，舊版 `main.js` 會把已登入使用者誤導向登入頁。透過 Playwright 對真實
+後端驗證：網址不帶 token 但 localStorage 有 token 時能正常初始化、localStorage 無 token 與
+缺少 characterId 兩種情境都正確導向 `/login/`，全程零 console error。
